@@ -10,7 +10,14 @@ const Schedule = require("../model/scheduleModel");
 const Appointment = require("../model/appointmentModel");
 // const Users = require("../model/userModel");
 const Medicines = require("../model/medicines");
-
+const cloudinary = require("cloudinary").v2;
+const fs = require('fs');
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET,
+  secure: true,
+});
 async function securePassword(password) {
   try {
     const hashPassword = await bcrypt.hash(password, 10);
@@ -42,7 +49,7 @@ const signup = async (req, res) => {
       });
       const docData = await doctor.save();
       if (docData) {
-        await mailSender(Email, Otp,'signup');
+        await mailSender(Email, Otp, "signup");
         const data = {
           message: "Check mail",
           string: token,
@@ -85,15 +92,15 @@ const login = async (req, res) => {
       const passwordMatch = await bcrypt.compare(password, doctorData.password);
       if (passwordMatch) {
         if (doctorData.isVerified === true) {
-          if(doctorData.isApproved){
+          if (doctorData.isApproved) {
             if (!doctorData.isBlocked) {
               const token = createDoctorTokens(doctorData._id);
               res.json({ doctorData, token });
             } else {
               res.json("blocked");
             }
-          }else{
-            res.json('notApproved')
+          } else {
+            res.json("notApproved");
           }
         } else {
           res.json("unverified");
@@ -115,14 +122,10 @@ const verifyOtp = async (req, res) => {
     const user = await Doctor.findOne({ email: email });
     if (user.otp != otp) {
       res.json("invalid");
-    }else{
-      await Doctor.findOneAndUpdate(
-        { email:email },
-        { $set: { otp: "" } }
-      );
-      res.json('valid')
+    } else {
+      await Doctor.findOneAndUpdate({ email: email }, { $set: { otp: "" } });
+      res.json("valid");
     }
-
   } catch (error) {
     console.log(error);
   }
@@ -137,24 +140,26 @@ const forgotPassword = async (req, res) => {
       await Doctor.findOneAndUpdate({ email: email }, { $set: { otp: otp } });
       await mailSender(emailData.email, otp, "forgotPassword");
       res.json("success");
-    }else{
-      res.json('not found')
+    } else {
+      res.json("not found");
     }
   } catch (error) {
     console.log(error);
   }
 };
 
-const resetPassword = async(req,res)=>{
+const resetPassword = async (req, res) => {
   try {
-    let {email,password} = req.body 
-    const pass = await securePassword(password)
-    await Doctor.findOneAndUpdate({email:email},{$set:{password:pass}}).then(
-      res.json('success'))
+    let { email, password } = req.body;
+    const pass = await securePassword(password);
+    await Doctor.findOneAndUpdate(
+      { email: email },
+      { $set: { password: pass } }
+    ).then(res.json("success"));
   } catch (error) {
-    res.json("error")
+    res.json("error");
   }
-}
+};
 
 const doctorData = async (req, res) => {
   try {
@@ -164,6 +169,17 @@ const doctorData = async (req, res) => {
     res.json("error");
   }
 };
+
+const deleteImageFromDisk = (imagePath) => {
+  fs.unlink(imagePath, (error) => {
+   if (error) {
+     console.error('Failed to delete image from disk:', error);
+   } else {
+     console.log('Image deleted from disk:', imagePath);
+   }
+ });
+};
+
 
 const setProfile = async (req, res) => {
   try {
@@ -184,6 +200,10 @@ const setProfile = async (req, res) => {
       if (prChange === "true") {
         const profile = fileName.shift();
         if (fileName == "") {
+          const result = await cloudinary.uploader.upload(req.files[0].path);
+          console.log(result);
+          const imagePath = req.files[0].path;
+          deleteImageFromDisk(imagePath);
           profileData = await Doctor.findByIdAndUpdate(
             { _id: req._id.id },
             {
@@ -196,11 +216,19 @@ const setProfile = async (req, res) => {
                 gender: gender,
                 fee: fee,
                 address: address,
-                image: profile,
+                image: result.url,
               },
             }
           );
         } else {
+          const resultArr = []
+          for (const file of req.files){
+            const imagePath = file.path
+            const result = await cloudinary.uploader.upload(file.path)
+            resultArr.push(result.url)
+            deleteImageFromDisk(imagePath)
+          }
+          const profile = resultArr.shift()
           profileData = await Doctor.findByIdAndUpdate(
             { _id: req._id.id },
             {
@@ -215,11 +243,18 @@ const setProfile = async (req, res) => {
                 address: address,
                 image: profile,
               },
-              $addToSet: { documents: { $each: fileName } },
+              $addToSet: { documents: { $each: resultArr } },
             }
           );
         }
       } else {
+        const resultArr = []
+        for (const file of req.files){
+          const imagePath = file.path
+          const result = await cloudinary.uploader.upload(file.path)
+          resultArr.push(result.url)
+          deleteImageFromDisk(imagePath)
+        }
         profileData = await Doctor.findByIdAndUpdate(
           { _id: req._id.id },
           {
@@ -233,7 +268,7 @@ const setProfile = async (req, res) => {
               fee: fee,
               address: address,
             },
-            $addToSet: { documents: { $each: fileName } },
+            $addToSet: { documents: { $each: resultArr } },
           }
         );
       }
@@ -287,16 +322,14 @@ const deleteImage = async (req, res) => {
   }
 };
 
-
 const schedule = async (req, res) => {
   try {
-    const data = await Schedule.find({ doctor: req._id.id }).sort({date:1});
+    const data = await Schedule.find({ doctor: req._id.id }).sort({ date: 1 });
     res.json(data);
   } catch (error) {
     res.json("error");
   }
 };
-
 
 const manageSchedule = async (req, res) => {
   try {
@@ -503,7 +536,7 @@ const prescriptions = async (req, res) => {
         },
       },
     ]);
-    res.json(data)
+    res.json(data);
   } catch (error) {
     console.log(error);
   }
@@ -520,19 +553,22 @@ const medicines = async (req, res) => {
 
 const addPrescription = async (req, res) => {
   try {
-    const data = req.body
+    const data = req.body;
     const med = new Map();
     for (let i = 0; i < data.length; i++) {
       med.set(data[i].medicine, data[i].selectedDose);
     }
-    const update = await Appointment.findOneAndUpdate({_id:data[0].id},{$set:{medicines:med}})
-    res.json('done')
+    const update = await Appointment.findOneAndUpdate(
+      { _id: data[0].id },
+      { $set: { medicines: med } }
+    );
+    res.json("done");
   } catch (error) {
     console.log(error);
   }
 };
 
-const patients = async(req,res)=>{
+const patients = async (req, res) => {
   try {
     const data = await Appointment.aggregate([
       {
@@ -547,20 +583,20 @@ const patients = async(req,res)=>{
         },
       },
     ]);
-    res.json(data)
+    res.json(data);
   } catch (error) {
     console.log(error);
   }
-}
+};
 
-const dash = async(req,res)=>{
+const dash = async (req, res) => {
   try {
-    const data = await Appointment.find({doctor:req._id.id})
-    res.json(data)
+    const data = await Appointment.find({ doctor: req._id.id });
+    res.json(data);
   } catch (error) {
     console.log(error);
   }
-}
+};
 
 module.exports = {
   signup,

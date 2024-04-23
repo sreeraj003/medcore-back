@@ -1,12 +1,12 @@
 require("./config/mongo").connect();
 const express = require("express");
-const app = express();
 const cors = require("./middlewares/cors");
 const userRoute = require("./Routes/userRoute");
 const adminRoute = require("./Routes/adminRoute");
 const doctorRoute = require("./Routes/doctorRoute");
 const { Server } = require("socket.io");
 const socketManager = require("./config/socket");
+const app = express();
 
 app.use(cors);
 
